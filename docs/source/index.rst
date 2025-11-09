@@ -15,6 +15,7 @@ Contents
    howtos
    reference
    examples
+   adr/README
 
 ====================
  Indices and tables
