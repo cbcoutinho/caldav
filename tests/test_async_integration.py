@@ -214,7 +214,7 @@ class AsyncFunctionalTestsBaseClass:
         from caldav.aio import AsyncPrincipal
         from caldav.lib.error import AuthorizationError, NotFoundError
 
-        from .fixture_helpers import get_or_create_test_calendar
+        from .fixture_helpers import aget_or_create_test_calendar
 
         calendar_name = f"async-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
 
@@ -226,7 +226,7 @@ class AsyncFunctionalTestsBaseClass:
             pass
 
         # Use shared helper for calendar setup
-        calendar, created = await get_or_create_test_calendar(
+        calendar, created = await aget_or_create_test_calendar(
             async_client, principal, calendar_name=calendar_name
         )
 
@@ -252,7 +252,7 @@ class AsyncFunctionalTestsBaseClass:
         from caldav.aio import AsyncPrincipal
         from caldav.lib.error import AuthorizationError, NotFoundError
 
-        from .fixture_helpers import get_or_create_test_calendar
+        from .fixture_helpers import aget_or_create_test_calendar
 
         # Check if server supports mixed calendars
         supports_mixed = True
@@ -271,7 +271,7 @@ class AsyncFunctionalTestsBaseClass:
         # For servers without mixed calendar support, create a dedicated task list
         component_set = ["VTODO"] if not supports_mixed else None
 
-        calendar, created = await get_or_create_test_calendar(
+        calendar, created = await aget_or_create_test_calendar(
             async_client,
             principal,
             calendar_name=calendar_name,

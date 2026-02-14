@@ -923,56 +923,50 @@ class RepeatedFunctionalTestsBaseClass:
         Should ideally return a new calendar, if that's not possible it
         should see if there exists a test calendar, if that's not
         possible, give up and return the primary calendar.
+
+        Delegates core create-or-find logic to fixture_helpers.get_or_create_test_calendar,
+        handling test-infrastructure concerns (caching, cleanup, cal_id defaults) here.
         """
+        from .fixture_helpers import get_or_create_test_calendar
+
         if not self.is_supported("create-calendar"):
             if not self._default_calendar:
-                calendars = self.principal.get_calendars()
-                for c in calendars:
-                    if (
-                        "pythoncaldav-test"
-                        in c.get_properties(
-                            [
-                                dav.DisplayName(),
-                            ]
-                        ).values()
-                    ):
-                        self._default_calendar = c
-                        return c
-                self._default_calendar = calendars[0]
-
+                self._default_calendar, _ = get_or_create_test_calendar(self.caldav, self.principal)
             return self._default_calendar
-        else:
-            if "name" not in kwargs:
-                if not self.check_compatibility_flag(
-                    "unique_calendar_ids"
-                ) and self.cleanup_regime in ("light", "pre"):
-                    self._teardownCalendar(cal_id=self.testcal_id)
-                if not self.is_supported("create-calendar.set-displayname"):
-                    kwargs["name"] = None
-                else:
-                    kwargs["name"] = "Yep"
-            if "cal_id" not in kwargs:
-                # Use a separate calendar for non-VEVENT component sets
-                # (e.g. VTODO-only) to avoid reusing a VEVENT-only calendar
-                # on servers where MKCALENDAR "already exists" falls through
-                # to the existing calendar with the wrong component set.
-                comp_set = kwargs.get("supported_calendar_component_set", [])
-                if comp_set and "VEVENT" not in comp_set:
-                    kwargs["cal_id"] = self.testcal_id + "-tasks"
-                else:
-                    kwargs["cal_id"] = self.testcal_id
-            try:
-                ret = self.principal.make_calendar(**kwargs)
-            except (error.MkcalendarError, error.AuthorizationError):
-                ## "calendar already exists" can be ignored (at least
-                ## if no_delete_calendar flag is set).  Cyrus wrongly
-                ## flags this throug an AuthorizationError.  I guess
-                ## the logic is "you are not authorized to override
-                ## a unique id constraint")
-                ret = self.principal.calendar(cal_id=kwargs["cal_id"])
-            if self.cleanup_regime == "post":
-                self.calendars_used.append(ret)
-            return ret
+
+        # Pre-processing: set up defaults for name and cal_id
+        if "name" not in kwargs:
+            if not self.check_compatibility_flag("unique_calendar_ids") and self.cleanup_regime in (
+                "light",
+                "pre",
+            ):
+                self._teardownCalendar(cal_id=self.testcal_id)
+            if not self.is_supported("create-calendar.set-displayname"):
+                kwargs["name"] = None
+            else:
+                kwargs["name"] = "Yep"
+        if "cal_id" not in kwargs:
+            # Use a separate calendar for non-VEVENT component sets
+            # (e.g. VTODO-only) to avoid reusing a VEVENT-only calendar
+            # on servers where MKCALENDAR "already exists" falls through
+            # to the existing calendar with the wrong component set.
+            comp_set = kwargs.get("supported_calendar_component_set", [])
+            if comp_set and "VEVENT" not in comp_set:
+                kwargs["cal_id"] = self.testcal_id + "-tasks"
+            else:
+                kwargs["cal_id"] = self.testcal_id
+
+        ret, _ = get_or_create_test_calendar(
+            self.caldav,
+            self.principal,
+            calendar_name=kwargs.get("name", "pythoncaldav-test"),
+            cal_id=kwargs.get("cal_id"),
+            supported_calendar_component_set=kwargs.get("supported_calendar_component_set"),
+        )
+
+        if self.cleanup_regime == "post":
+            self.calendars_used.append(ret)
+        return ret
 
     def testCheckCompatibility(self, request) -> None:
         try:
