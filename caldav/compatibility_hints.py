@@ -883,7 +883,8 @@ nextcloud = {
     'auto-connect.url': {
         'basepath': '/remote.php/dav',
     },
-    'search.comp-type-optional': {'support': 'ungraceful'},
+    ## I'm surprised, I'm quite sure this was reported ungraceful earlier.  Passed with caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad 2026-02-15
+    #'search.comp-type-optional': {'support': 'ungraceful'},
     'search.recurrences.expanded.todo': {'support': 'unsupported'},
     'search.recurrences.expanded.exception': {'support': 'unsupported'}, ## TODO: verify
     'delete-calendar': {
@@ -898,6 +899,8 @@ nextcloud = {
     'principal-search.by-name.self': {'support': 'unsupported'},
     'principal-search': {'support': 'ungraceful'},
     'old_flags': ['unique_calendar_ids'],
+    ## I'm surprised, I'm quite sure this was passing earlier.  Caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad
+    'search.combined-is-logical-and': False
 }
 
 ## TODO: Latest - mismatch between config and test script in delete-calendar.free-namespace ... and create-calendar.set-displayname?
@@ -974,7 +977,7 @@ zimbra = {
 bedework = {
     'search.comp-type': {'support': 'broken', 'behaviour': 'Server returns everything when searching for events and nothing when searching for todos'},
     'search.comp-type-optional': {'support': 'ungraceful'},
-    'search.time-range.event': {'support': 'unsupported'},
+    #'search.time-range.event': {'support': 'unsupported'}, ## TODO: flapping??
     #"search.combined-is-logical-and": { "support": "unsupported" },
     ## TODO: play with this and see if it's needed
     'search-cache': {'behaviour': 'delay', 'delay': 1.5},
@@ -1036,7 +1039,9 @@ bedework = {
     },
     "principal-search": {
         "support": "ungraceful",
-    }
+    },
+    ## TODO: investigate more
+    "save-load.get-by-url": False
 }
 
 synology = {
@@ -1068,6 +1073,8 @@ baikal =  { ## version 0.10.1
         "calendar_order",
         "calendar_color",
     ],
+    ## I'm surprised, I'm quite sure this was passing earlier.  Caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad
+    'search.combined-is-logical-and': False
 } ## TODO: testPrincipals, testWrongAuthType, testTodoDatesearch fails
 
 ## Some unknown version of baikal has this
@@ -1128,6 +1135,10 @@ davical = {
 }
 
 sogo = {
+    ## I'm surprised, I'm quite sure this was passing earlier.  reported unsupported with caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad 2026-02-15
+    "search.text.category": False,
+    "search.time-range.event.old-dates": False,
+    "search.time-range.todo.old-dates": False,
     "save-load.journal": {"support": "ungraceful"},
     "search.is-not-defined": {"support": "unsupported"},
     "search.text.case-sensitive": {
@@ -1139,8 +1150,9 @@ sogo = {
     "search.time-range.alarm": {
         "support": "unsupported"
     },
+    ## was unsupported.  reported ungraceful with caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad 2026-02-15
     "search.comp-type-optional": {
-        "support": "unsupported"
+        "support": "ungraceful"
     },
     ## includes-implicit.todo has been observed as both supported and unsupported
     ## across different test runs.  Other includes-implicit children are unsupported.
@@ -1276,7 +1288,7 @@ posteo = {
 #]
 
 ## Davis uses sabre/dav (same backend as Baikal), so hints are similar.
-## To be refined after running tests.
+## TODO: consolidate, make a sabredav dict and let davis/baikal build on it
 davis = {
     "search.recurrences.expanded.todo": {"support": "unsupported"},
     "search.recurrences.expanded.exception": {"support": "unsupported"},
@@ -1289,6 +1301,8 @@ davis = {
         "calendar_order",
         "calendar_color",
     ],
+    ## I'm surprised, I'm quite sure this was passing earlier.  Caldav commit a98d50490b872e9b9d8e93e2e401c936ad193003, caldav server checker commit 3cae24cf99da1702b851b5a74a9b88c8e5317dad
+    'search.combined-is-logical-and': False
 }
 
 ## Apple CalendarServer (CCS) - archived 2019, Python 2/Twisted.
