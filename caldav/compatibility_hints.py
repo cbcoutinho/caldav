@@ -1381,6 +1381,7 @@ gmx = {
     'principal-search': {'support': 'ungraceful'},
     'principal-search.by-name.self': {'support': 'unsupported'},
     'freebusy-query.rfc4791': {'support': 'unsupported'},
+    'create-calendar': {'support': 'unknown' }, ## https://github.com/python-caldav/caldav/issues/624
     "old_flags":  [
         "no_scheduling_mailbox",
         #"text_search_is_case_insensitive",

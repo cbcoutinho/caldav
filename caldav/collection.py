@@ -421,6 +421,10 @@ class Principal(DAVObject):
         self.calendar_home_set = calendar_home_set_url
         return self._calendar_home_set
 
+    ## TODO: the parameter names name, cal_id and cal_url is quite inconsistent
+    ## I think it was made so to make sure the calendar URL was not mixed up
+    ## with the caldav base URL - but I still think we should reconsider this
+    ## parameter naming
     def calendar(
         self,
         name: str | None = None,
