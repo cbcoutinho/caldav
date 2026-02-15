@@ -909,8 +909,6 @@ nextcloud = {
 
 ## TODO: Latest - mismatch between config and test script in delete-calendar.free-namespace ... and create-calendar.set-displayname?
 ecloud = nextcloud | {
-    ## Possibly a limitation on free accounts (extra calendars may require a paid plan)
-    'create-calendar': {'support': 'unsupported'},
     'search.is-not-defined': {'support': 'unsupported'},
     'search.text.case-sensitive': {'support': 'unsupported'},
     ## TODO: this applies only to test runs, not to ordinary usage
