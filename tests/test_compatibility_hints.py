@@ -324,6 +324,27 @@ class TestFeatureSetCollapse:
         auto_result = fs.is_supported("create-calendar.auto", return_type=dict)
         assert auto_result == {"support": "unsupported"}
 
+    def test_parent_default_not_overridden_by_subfeature_derivation(self) -> None:
+        """Test that a parent with an explicit default is not overridden by subfeature derivation.
+
+        Zimbra scenario: create-calendar.set-displayname is unsupported, but
+        create-calendar has an explicit default of 'full'.  The parent feature
+        represents an independent capability (calendar creation works), so the
+        subfeature status should not override the default.
+        """
+        fs = FeatureSet()
+        fs._server_features = {
+            "create-calendar.set-displayname": {"support": "unsupported"},
+        }
+
+        # create-calendar should return its default (full), NOT derive unsupported
+        # from .set-displayname
+        result = fs.is_supported("create-calendar", return_type=dict)
+        assert result == {"support": "full"}, (
+            f"create-calendar should default to 'full' even when "
+            f".set-displayname is unsupported, but got {result}"
+        )
+
     def test_hierarchical_vs_independent_subfeatures(self) -> None:
         """Test that hierarchical subfeatures derive parent, but independent ones don't"""
         fs = FeatureSet()

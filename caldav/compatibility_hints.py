@@ -468,11 +468,15 @@ class FeatureSet:
             if '.' not in feature_:
                 if not return_defaults:
                     return None
-                # Before returning default, check if we have subfeatures with explicit values
-                # If subfeatures exist and have mixed support levels, we should derive the parent status
-                derived = self._derive_from_subfeatures(feature_, feature_info, return_type, accept_fragile)
-                if derived is not None:
-                    return derived
+                # For features WITHOUT an explicit default (i.e. pure grouping features),
+                # derive status from subfeatures.  Features WITH a default represent
+                # independent capabilities and their default should not be overridden
+                # by subfeature statuses (e.g. create-calendar is supported even if
+                # create-calendar.set-displayname is not).
+                if 'default' not in feature_info:
+                    derived = self._derive_from_subfeatures(feature_, feature_info, return_type, accept_fragile)
+                    if derived is not None:
+                        return derived
                 return self._convert_node(self._default(feature_info), feature_info, return_type, accept_fragile)
             feature_ = feature_[:feature_.rfind('.')]
 
@@ -970,8 +974,6 @@ zimbra = {
     "calendar_order",
     "calendar_color"
     ]
-    ## TODO: there may be more, it should be organized and moved here.
-    ## Search for 'zimbra' in the code repository!
 }
 
 bedework = {
