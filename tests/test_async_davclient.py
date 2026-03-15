@@ -9,6 +9,7 @@ communication. We use Mock/MagicMock to emulate server communication.
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from caldav.async_davclient import AsyncDAVClient, AsyncDAVResponse, get_davclient
@@ -212,7 +213,7 @@ class TestAsyncDAVClient:
         assert headers["X-Test"] == "value"
         assert headers["Depth"] == "0"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_context_manager(self) -> None:
         """Test async context manager protocol."""
         async with AsyncDAVClient(url="https://caldav.example.com/dav/") as client:
@@ -221,25 +222,18 @@ class TestAsyncDAVClient:
 
         # After exit, session should be closed (we can't easily verify this without mocking)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_close(self) -> None:
-        """Test close method."""
-        from caldav.async_davclient import _USE_HTTPX
-
+        """Test close method closes internally-created session."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
         client.session = AsyncMock()
-        # httpx uses aclose(), niquests uses close()
         client.session.aclose = AsyncMock()
-        client.session.close = AsyncMock()
 
         await client.close()
 
-        if _USE_HTTPX:
-            client.session.aclose.assert_called_once()
-        else:
-            client.session.close.assert_called_once()
+        client.session.aclose.assert_called_once()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_request_method(self) -> None:
         """Test request method."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -259,7 +253,7 @@ class TestAsyncDAVClient:
         assert response.status == 207
         client.session.request.assert_called_once()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_propfind_method(self) -> None:
         """Test propfind method."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -282,7 +276,7 @@ class TestAsyncDAVClient:
         assert "Depth" in call_args.kwargs["headers"]
         assert call_args.kwargs["headers"]["Depth"] == "1"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_propfind_with_custom_url(self) -> None:
         """Test propfind with custom URL."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -306,7 +300,7 @@ class TestAsyncDAVClient:
         # httpx uses kwargs for url
         assert "calendars" in call_args.kwargs["url"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_report_method(self) -> None:
         """Test report method."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -327,7 +321,7 @@ class TestAsyncDAVClient:
         assert "Content-Type" in call_args.kwargs["headers"]
         assert "application/xml" in call_args.kwargs["headers"]["Content-Type"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_options_method(self) -> None:
         """Test options method."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -347,7 +341,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "OPTIONS"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_proppatch_method(self) -> None:
         """Test proppatch method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -364,7 +358,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "PROPPATCH"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_put_method(self) -> None:
         """Test put method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -381,7 +375,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "PUT"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_delete_method(self) -> None:
         """Test delete method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -395,7 +389,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "DELETE"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_post_method(self) -> None:
         """Test post method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -412,7 +406,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "POST"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_mkcol_method(self) -> None:
         """Test mkcol method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -426,7 +420,7 @@ class TestAsyncDAVClient:
         call_args = client.session.request.call_args
         assert call_args.kwargs["method"] == "MKCOL"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_mkcalendar_method(self) -> None:
         """Test mkcalendar method (requires URL)."""
         client = AsyncDAVClient(url="https://caldav.example.com/dav/")
@@ -520,7 +514,7 @@ class TestAsyncDAVClient:
 class TestGetDAVClient:
     """Tests for get_davclient factory function."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_basic(self) -> None:
         """Test basic get_davclient usage."""
         with patch.object(AsyncDAVClient, "options") as mock_options:
@@ -541,7 +535,7 @@ class TestGetDAVClient:
             assert isinstance(client, AsyncDAVClient)
             mock_options.assert_called_once()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_without_probe(self) -> None:
         """Test get_davclient with probe disabled."""
         client = await get_davclient(
@@ -554,7 +548,7 @@ class TestGetDAVClient:
         assert client is not None
         assert isinstance(client, AsyncDAVClient)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_env_vars(self) -> None:
         """Test get_davclient with environment variables."""
         with patch.dict(
@@ -571,7 +565,7 @@ class TestGetDAVClient:
             assert client.username == "envuser"
             assert client.password == "envpass"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_params_override_env(self) -> None:
         """Test that explicit params override environment variables."""
         with patch.dict(
@@ -593,7 +587,7 @@ class TestGetDAVClient:
             assert client.username == "paramuser"
             assert client.password == "parampass"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_missing_url(self) -> None:
         """Test that get_davclient raises error without URL."""
         # Clear any env vars that might be set
@@ -601,7 +595,7 @@ class TestGetDAVClient:
             with pytest.raises(ValueError, match="No configuration found"):
                 await get_davclient(username="user", password="pass", probe=False)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_probe_failure(self) -> None:
         """Test get_davclient when probe fails."""
         with patch.object(AsyncDAVClient, "options") as mock_options:
@@ -615,7 +609,7 @@ class TestGetDAVClient:
                     probe=True,
                 )
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_davclient_additional_kwargs(self) -> None:
         """Test passing additional kwargs to AsyncDAVClient."""
         client = await get_davclient(
@@ -634,7 +628,7 @@ class TestGetDAVClient:
 class TestAPIImprovements:
     """Tests verifying that API improvements were applied."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_dummy_parameters(self) -> None:
         """Verify dummy parameters are not present in async API."""
         import inspect
@@ -651,7 +645,7 @@ class TestAPIImprovements:
         sig = inspect.signature(AsyncDAVClient.mkcalendar)
         assert "dummy" not in sig.parameters
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_standardized_body_parameter(self) -> None:
         """Verify methods have appropriate parameters.
 
@@ -670,7 +664,7 @@ class TestAPIImprovements:
         assert "body" in sig.parameters
         assert "query" not in sig.parameters
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_all_methods_have_headers_parameter(self) -> None:
         """Verify all HTTP methods accept headers parameter."""
         import inspect
@@ -692,7 +686,7 @@ class TestAPIImprovements:
             sig = inspect.signature(method)
             assert "headers" in sig.parameters, f"{method_name} missing headers parameter"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_url_requirements_split(self) -> None:
         """Verify URL parameter requirements are split correctly."""
         import inspect
@@ -819,3 +813,113 @@ END:VCALENDAR"""
         obj = AsyncCalendarObjectResource(client=None, data=data)
         # This should return False since there's no VEVENT/VTODO/VJOURNAL
         assert obj.has_component() is False
+
+
+class TestExternalSession:
+    """Tests for external httpx.AsyncClient session injection."""
+
+    def test_external_session_stored(self) -> None:
+        """Verify an externally-provided session is stored and _owns_session is False."""
+        import httpx
+
+        external = httpx.AsyncClient()
+        client = AsyncDAVClient(
+            url="https://caldav.example.com/dav/",
+            session=external,
+        )
+
+        assert client.session is external
+        assert client._owns_session is False
+
+    def test_internal_session_owns(self) -> None:
+        """Verify a default client owns its session."""
+        client = AsyncDAVClient(url="https://caldav.example.com/dav/")
+
+        assert client._owns_session is True
+        assert isinstance(client.session, httpx.AsyncClient)
+
+    @pytest.mark.anyio
+    async def test_close_skips_external_session(self) -> None:
+        """Verify close() does not close an externally-provided session."""
+        external = AsyncMock()
+        external.aclose = AsyncMock()
+
+        client = AsyncDAVClient(
+            url="https://caldav.example.com/dav/",
+            session=external,
+        )
+
+        await client.close()
+
+        external.aclose.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_close_closes_internal_session(self) -> None:
+        """Verify close() closes the internally-created session."""
+        client = AsyncDAVClient(url="https://caldav.example.com/dav/")
+        client.session = AsyncMock()
+        client.session.aclose = AsyncMock()
+
+        await client.close()
+
+        client.session.aclose.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_request_flows_through_external_session(self) -> None:
+        """Verify requests are sent via the injected external session."""
+        external = AsyncMock()
+        mock_response = create_mock_response(
+            content=b"OK",
+            status_code=200,
+            headers={"Content-Type": "text/plain"},
+        )
+        external.request = AsyncMock(return_value=mock_response)
+
+        client = AsyncDAVClient(
+            url="https://caldav.example.com/dav/",
+            session=external,
+        )
+
+        response = await client.request("https://caldav.example.com/dav/test", "GET")
+
+        assert response.status == 200
+        external.request.assert_called_once()
+        call_kwargs = external.request.call_args.kwargs
+        assert call_kwargs["method"] == "GET"
+        assert "test" in call_kwargs["url"]
+
+    @pytest.mark.anyio
+    async def test_get_davclient_with_session(self) -> None:
+        """Verify get_davclient passes session through to AsyncDAVClient."""
+        external = AsyncMock()
+        mock_response = create_mock_response(
+            status_code=200,
+            headers=SAMPLE_OPTIONS_HEADERS,
+        )
+        mock_response_obj = AsyncDAVResponse(mock_response)
+        external.request = AsyncMock(return_value=mock_response)
+
+        with patch.object(AsyncDAVClient, "options", return_value=mock_response_obj):
+            client = await get_davclient(
+                url="https://caldav.example.com/dav/",
+                username="user",
+                password="pass",
+                session=external,
+            )
+
+        assert client.session is external
+        assert client._owns_session is False
+
+    @pytest.mark.anyio
+    async def test_context_manager_with_external_session(self) -> None:
+        """Verify context manager does not close external session."""
+        external = AsyncMock()
+        external.aclose = AsyncMock()
+
+        async with AsyncDAVClient(
+            url="https://caldav.example.com/dav/",
+            session=external,
+        ) as client:
+            assert client.session is external
+
+        external.aclose.assert_not_called()

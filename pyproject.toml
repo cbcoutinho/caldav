@@ -53,6 +53,7 @@ classifiers = [
 
 dependencies = [
   "lxml",
+  "httpx",
   "niquests",
   "recurring-ical-events>=2.0.0",
   "typing_extensions;python_version<'3.11'",
@@ -82,7 +83,6 @@ test = [
   "xandikos>=0.2.12",
   "radicale",
   "pyfakefs",
-  "httpx",
   #"caldav_server_tester"
   "deptry>=0.24.0; python_version >= '3.10'",
 ]

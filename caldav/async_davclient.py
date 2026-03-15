@@ -17,40 +17,15 @@ if TYPE_CHECKING:
     from caldav.calendarobjectresource import CalendarObjectResource, Event, Todo
     from caldav.collection import Calendar, Principal
 
-# Try httpx first (preferred), fall back to niquests
-_USE_HTTPX = False
-_USE_NIQUESTS = False
+import httpx
+
 _H2_AVAILABLE = False
-
 try:
-    import httpx
+    import h2  # noqa: F401
 
-    _USE_HTTPX = True
-    # Check if h2 is available for HTTP/2 support
-    try:
-        import h2  # noqa: F401
-
-        _H2_AVAILABLE = True
-    except ImportError:
-        pass
+    _H2_AVAILABLE = True
 except ImportError:
     pass
-
-if not _USE_HTTPX:
-    try:
-        import niquests
-        from niquests import AsyncSession
-        from niquests.structures import CaseInsensitiveDict
-
-        _USE_NIQUESTS = True
-    except ImportError:
-        pass
-
-if not _USE_HTTPX and not _USE_NIQUESTS:
-    raise ImportError(
-        "Either httpx or niquests library is required for async_davclient. "
-        "Install with: pip install httpx  (or: pip install niquests)"
-    )
 
 
 from caldav import __version__
@@ -75,7 +50,6 @@ from caldav.protocol.xml_parsers import (
     _parse_propfind_response,
     _parse_sync_collection_response,
 )
-from caldav.requests import HTTPBearerAuth
 from caldav.response import BaseDAVResponse
 
 log = logging.getLogger("caldav")
@@ -84,6 +58,17 @@ if sys.version_info < (3, 11):
     from typing_extensions import Self
 else:
     from typing import Self
+
+
+class _HTTPBearerAuth(httpx.Auth):
+    """Bearer token authentication for httpx."""
+
+    def __init__(self, token: str | bytes) -> None:
+        self.token = token.decode("utf-8") if isinstance(token, bytes) else token
+
+    def auth_flow(self, request: httpx.Request):
+        request.headers["Authorization"] = f"Bearer {self.token}"
+        yield request
 
 
 class AsyncDAVResponse(BaseDAVResponse):
@@ -133,7 +118,7 @@ class AsyncDAVClient(BaseDAVClient):
         proxy: str | None = None,
         username: str | None = None,
         password: str | None = None,
-        auth: Any | None = None,  # httpx.Auth or niquests.auth.AuthBase
+        auth: Any | None = None,  # httpx.Auth
         auth_type: str | None = None,
         timeout: int | None = None,
         ssl_verify_cert: bool | str = True,
@@ -143,6 +128,7 @@ class AsyncDAVClient(BaseDAVClient):
         features: FeatureSet | dict | str | None = None,
         enable_rfc6764: bool = True,
         require_tls: bool = True,
+        session: httpx.AsyncClient | None = None,
     ) -> None:
         """
         Initialize an async DAV client.
@@ -152,7 +138,7 @@ class AsyncDAVClient(BaseDAVClient):
             proxy: Proxy server (scheme://hostname:port).
             username: Username for authentication.
             password: Password for authentication.
-            auth: Custom auth object (httpx.Auth or niquests AuthBase).
+            auth: Custom auth object (httpx.Auth).
             auth_type: Auth type ('bearer', 'digest', or 'basic').
             timeout: Request timeout in seconds.
             ssl_verify_cert: SSL certificate verification (bool or CA bundle path).
@@ -162,6 +148,10 @@ class AsyncDAVClient(BaseDAVClient):
             features: FeatureSet for server compatibility workarounds.
             enable_rfc6764: Enable RFC6764 DNS-based service discovery.
             require_tls: Require TLS for discovered services (security consideration).
+            session: Pre-configured httpx.AsyncClient to use. When provided, the
+                caller is responsible for the session lifecycle (close() will not
+                close it). SSL, proxy, and timeout parameters are ignored since
+                they are configured on the external session.
         """
         headers = headers or {}
 
@@ -187,12 +177,25 @@ class AsyncDAVClient(BaseDAVClient):
         # Note: Client is created lazily or recreated when settings change
         try:
             # Only enable HTTP/2 if the server supports it AND h2 is installed
-            self._http2 = self.features.is_supported("http.multiplexing") and (
-                _H2_AVAILABLE or _USE_NIQUESTS
-            )
+            self._http2 = self.features.is_supported("http.multiplexing") and _H2_AVAILABLE
         except (TypeError, AttributeError):
             self._http2 = False
-        self._create_session()
+
+        if session is not None:
+            self.session = session
+            self._owns_session = False
+            if (
+                any(p is not None for p in (proxy, ssl_cert))
+                or ssl_verify_cert is not True
+                or timeout is not None
+            ):
+                log.debug(
+                    "SSL, proxy, and timeout parameters are ignored when an "
+                    "external session is provided"
+                )
+        else:
+            self._owns_session = True
+            self._create_default_session()
 
         # Auto-construct URL if needed (RFC6764 discovery, etc.)
         from caldav.davclient import _auto_url
@@ -247,22 +250,15 @@ class AsyncDAVClient(BaseDAVClient):
         }
         self.headers.update(headers)
 
-    def _create_session(self) -> None:
+    def _create_default_session(self) -> None:
         """Create or recreate the async HTTP client with current settings."""
-        if _USE_HTTPX:
-            self.session = httpx.AsyncClient(
-                http2=self._http2 or False,
-                proxy=self._proxy,
-                verify=self._ssl_verify_cert if self._ssl_verify_cert is not None else True,
-                cert=self._ssl_cert,
-                timeout=self._timeout,
-            )
-        else:
-            # niquests - proxy/ssl/timeout are passed per-request
-            try:
-                self.session = AsyncSession(multiplexed=self._http2 or False)
-            except TypeError:
-                self.session = AsyncSession()
+        self.session = httpx.AsyncClient(
+            http2=self._http2 or False,
+            proxy=self._proxy,
+            verify=self._ssl_verify_cert if self._ssl_verify_cert is not None else True,
+            cert=self._ssl_cert,
+            timeout=self._timeout,
+        )
 
     async def __aenter__(self) -> Self:
         """Async context manager entry."""
@@ -278,12 +274,13 @@ class AsyncDAVClient(BaseDAVClient):
         await self.close()
 
     async def close(self) -> None:
-        """Close the async client."""
-        if hasattr(self, "session"):
-            if _USE_HTTPX:
-                await self.session.aclose()
-            else:
-                await self.session.close()
+        """Close the async client.
+
+        If the session was provided externally (via the ``session`` parameter),
+        this is a no-op — the caller is responsible for closing it.
+        """
+        if hasattr(self, "session") and self._owns_session:
+            await self.session.aclose()
 
     @staticmethod
     def _build_method_headers(
@@ -351,37 +348,19 @@ class AsyncDAVClient(BaseDAVClient):
             f"sending request - method={method}, url={str(url_obj)}, headers={combined_headers}\nbody:\n{to_normal_str(body)}"
         )
 
-        # Build request kwargs - different for httpx vs niquests
-        if _USE_HTTPX:
-            request_kwargs: dict[str, Any] = {
-                "method": method,
-                "url": str(url_obj),
-                "content": to_wire(body) if body else None,
-                "headers": combined_headers,
-                "auth": self.auth,
-                "timeout": self.timeout,
-            }
-        else:
-            # niquests uses different parameter names
-            proxies = None
-            if self.proxy is not None:
-                proxies = {url_obj.scheme: self.proxy}
-            request_kwargs: dict[str, Any] = {
-                "method": method,
-                "url": str(url_obj),
-                "data": to_wire(body) if body else None,
-                "headers": combined_headers,
-                "auth": self.auth,
-                "timeout": self.timeout,
-                "proxies": proxies,
-                "verify": self.ssl_verify_cert,
-                "cert": self.ssl_cert,
-            }
+        # Build request kwargs for httpx
+        request_kwargs: dict[str, Any] = {
+            "method": method,
+            "url": str(url_obj),
+            "content": to_wire(body) if body else None,
+            "headers": combined_headers,
+            "auth": self.auth,
+            "timeout": self.timeout,
+        }
 
         try:
             r = await self.session.request(**request_kwargs)
-            reason = r.reason_phrase if _USE_HTTPX else r.reason
-            log.debug(f"server responded with {r.status_code} {reason}")
+            log.debug(f"server responded with {r.status_code} {r.reason_phrase}")
             if (
                 r.status_code == 401
                 and "text/html" in self.headers.get("Content-Type", "")
@@ -408,28 +387,15 @@ class AsyncDAVClient(BaseDAVClient):
             if self.auth or not self.password:
                 raise
             # Build minimal request for auth detection
-            if _USE_HTTPX:
-                r = await self.session.request(
-                    method="GET",
-                    url=str(url_obj),
-                    headers=combined_headers,
-                    timeout=self.timeout,
-                )
-            else:
-                proxies = None
-                if self.proxy is not None:
-                    proxies = {url_obj.scheme: self.proxy}
-                r = await self.session.request(
-                    method="GET",
-                    url=str(url_obj),
-                    headers=combined_headers,
-                    timeout=self.timeout,
-                    proxies=proxies,
-                    verify=self.ssl_verify_cert,
-                    cert=self.ssl_cert,
-                )
-            reason = r.reason_phrase if _USE_HTTPX else r.reason
-            log.debug(f"auth type detection: server responded with {r.status_code} {reason}")
+            r = await self.session.request(
+                method="GET",
+                url=str(url_obj),
+                headers=combined_headers,
+                timeout=self.timeout,
+            )
+            log.debug(
+                f"auth type detection: server responded with {r.status_code} {r.reason_phrase}"
+            )
             if r.status_code == 401 and r.headers.get("WWW-Authenticate"):
                 auth_types = self.extract_auth_types(r.headers["WWW-Authenticate"])
                 self.build_auth_object(auth_types)
@@ -470,9 +436,15 @@ class AsyncDAVClient(BaseDAVClient):
             # Handle HTTP/2 issue (matches original sync client)
             # Most likely wrong username/password combo, but could be an HTTP/2 problem
             if self.features.is_supported("http.multiplexing", return_defaults=False) is None:
-                await self.close()  # Uses correct close method for httpx/niquests
-                self._http2 = False
-                self._create_session()
+                if not self._owns_session:
+                    log.warning(
+                        "HTTP/2 retry requires recreating the session, but an "
+                        "external session is in use. Skipping HTTP/2 downgrade."
+                    )
+                else:
+                    await self.close()
+                    self._http2 = False
+                    self._create_default_session()
                 # Set multiplexing to False BEFORE retry to prevent infinite loop
                 # If the retry succeeds, this was the right choice
                 # If it also fails with 401, it's not a multiplexing issue but an auth issue
@@ -846,10 +818,10 @@ class AsyncDAVClient(BaseDAVClient):
     # ==================== Authentication Helpers ====================
 
     def build_auth_object(self, auth_types: list[str] | None = None) -> None:
-        """Build authentication object for the httpx/niquests library.
+        """Build authentication object for httpx.
 
         Uses shared auth type selection logic from BaseDAVClient, then
-        creates the appropriate auth object for this HTTP library.
+        creates the appropriate httpx auth object.
 
         Args:
             auth_types: List of acceptable auth types from server.
@@ -857,23 +829,12 @@ class AsyncDAVClient(BaseDAVClient):
         # Use shared selection logic
         auth_type = self._select_auth_type(auth_types)
 
-        # Build auth object - use appropriate classes for httpx or niquests
         if auth_type == "bearer":
-            self.auth = HTTPBearerAuth(self.password)
+            self.auth = _HTTPBearerAuth(self.password)
         elif auth_type == "digest":
-            if _USE_HTTPX:
-                self.auth = httpx.DigestAuth(self.username, self.password)
-            else:
-                from niquests.auth import HTTPDigestAuth
-
-                self.auth = HTTPDigestAuth(self.username, self.password)
+            self.auth = httpx.DigestAuth(self.username, self.password)
         elif auth_type == "basic":
-            if _USE_HTTPX:
-                self.auth = httpx.BasicAuth(self.username, self.password)
-            else:
-                from niquests.auth import HTTPBasicAuth
-
-                self.auth = HTTPBasicAuth(self.username, self.password)
+            self.auth = httpx.BasicAuth(self.username, self.password)
         elif auth_type:
             raise error.AuthorizationError(f"Unsupported auth type: {auth_type}")
 
@@ -1260,7 +1221,11 @@ class AsyncDAVClient(BaseDAVClient):
 # ==================== Factory Function ====================
 
 
-async def get_davclient(probe: bool = True, **kwargs: Any) -> AsyncDAVClient:
+async def get_davclient(
+    probe: bool = True,
+    session: httpx.AsyncClient | None = None,
+    **kwargs: Any,
+) -> AsyncDAVClient:
     """
     Get an async DAV client instance with configuration from multiple sources.
 
@@ -1268,6 +1233,8 @@ async def get_davclient(probe: bool = True, **kwargs: Any) -> AsyncDAVClient:
 
     Args:
         probe: Verify connectivity with OPTIONS request (default: True).
+        session: Pre-configured httpx.AsyncClient to use. When provided, the
+            caller is responsible for the session lifecycle.
         **kwargs: All other arguments passed to base get_davclient.
 
     Returns:
@@ -1281,6 +1248,9 @@ async def get_davclient(probe: bool = True, **kwargs: Any) -> AsyncDAVClient:
         async with await get_davclient(url="...", username="...", password="...") as client:
             principal = await client.principal()
     """
+    # session is a runtime object, not a serializable config key — it would be
+    # filtered out by config.get_connection_params(). Pass it through after
+    # the client is created by _base_get_davclient.
     client = _base_get_davclient(AsyncDAVClient, **kwargs)
 
     if client is None:
@@ -1288,6 +1258,14 @@ async def get_davclient(probe: bool = True, **kwargs: Any) -> AsyncDAVClient:
             "No configuration found. Provide connection parameters, "
             "set CALDAV_URL environment variable, or create a config file."
         )
+
+    # Inject external session after client creation (session is not a
+    # serializable config key, so _base_get_davclient cannot pass it through)
+    if session is not None:
+        if client._owns_session:
+            await client.session.aclose()
+        client.session = session
+        client._owns_session = False
 
     # Probe connection if requested
     if probe:
